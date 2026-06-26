@@ -1,0 +1,67 @@
+# Lab 1 — KMS Envelope Encryption + CloudTrail Audit Logging for PHI
+
+## Scenario
+[2–3 sentences. The hospital storing lab results in S3. What HIPAA
+control this maps to — §164.312(a)(2)(iv) encryption + §164.312(b)
+audit controls. Not a story here — that lives in the writeup.]
+
+## What gets built
+- Customer-Managed KMS key with rotation enabled and a least-privilege key policy
+- S3 bucket with default SSE-KMS encryption using the CMK
+- CloudTrail trail capturing management events + KMS data events + S3 data events
+- Dedicated S3 bucket for CloudTrail logs, encrypted with a separate CMK
+- Two IAM test principals: one authorized to decrypt, one explicitly denied
+
+## What gets demonstrated
+- Every PHI object in S3 is encrypted at rest with a customer-controlled key
+- Every key-use event (Encrypt, Decrypt, GenerateDataKey) is logged with caller identity, timestamp, and source IP
+- An unauthorized decrypt attempt is denied AND logged — both halves matter
+- The audit trail is queryable via Athena
+
+## Architecture
+![Architecture](../diagrams/architecture.png)
+
+## Prerequisites
+- AWS account (dedicated lab account recommended)
+- Terraform ~> 1.9
+- AWS CLI v2 configured with a profile named `hipaa-labs`
+- ~$X estimated cost if left running 24h (we'll calculate this for real)
+
+## Deploy
+```bash
+cd terraform
+cp terraform.tfvars.example terraform.tfvars
+# edit terraform.tfvars
+terraform init
+terraform plan -out=tfplan
+terraform apply tfplan
+```
+
+## Verify
+```bash
+cd ../verification
+./verify.sh
+```
+[Then link to athena-queries.md for the audit trail queries]
+
+## Tear down
+```bash
+cd terraform
+terraform destroy
+```
+[Note about CloudTrail log bucket — versioning + retention. Manual
+cleanup may be required if you've enabled MFA delete. Be explicit.]
+
+## Cost
+[Real numbers. KMS key = $1/month + $0.03 per 10k requests. CloudTrail
+management events free, data events $0.10 per 100k. S3 standard pricing.
+Estimate for 24h running idle vs the verify run.]
+
+## What I'd do differently in production
+[3–5 bullets. Honest. Things deliberately simplified for the lab —
+remote state, multi-region trail, KMS multi-region keys, separate
+log archive account, Config rules for compliance drift detection.
+This section is what separates a portfolio lab from a tutorial.]
+
+## Further reading
+[AWS docs links, HIPAA Security Rule citations, your writeup link]
