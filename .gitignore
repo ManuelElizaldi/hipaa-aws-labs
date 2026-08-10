@@ -1,0 +1,20 @@
+# Terraform state — contains resource IDs, potentially secrets. Never commit.
+*.tfstate
+*.tfstate.*
+
+# Variable values — real tfvars may contain account-specific info
+*.tfvars
+!*.tfvars.example
+
+# Terraform working directory — provider binaries, large
+.terraform/
+
+# Crash logs
+crash.log
+crash.*.log
+
+# OS noise
+.DS_Store
+
+# Editor artifacts
+*.save
