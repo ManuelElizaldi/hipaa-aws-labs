@@ -18,3 +18,5 @@ crash.*.log
 
 # Editor artifacts
 *.save
+
+/home/manu/Desktop/Projects/hipaa-aws-labs/lab-01-kms-cloudtrail/verification/downloaded-*.csv
