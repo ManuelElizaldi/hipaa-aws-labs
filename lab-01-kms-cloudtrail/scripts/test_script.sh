@@ -1,20 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# -- config --
-
-
 # -- helpers -- 
+# Date for logging
+DAY=$(date +%F)
+FAILURES=()
 
-# -- tests --
-if OUTPUT="$(aws s3 cp sample-837p-claims.csv \
+# Running test 1
+OUTPUT="$(aws s3 cp sample-837p-claims.csv \
   s3://hipaa-lab01-phi-landing-948285518372/incoming/ \
-  --profile hipaa-labs 2>&1)"; then
-  echo "Test 1 Passed: File uploaded successfully without encryption."
+  --profile hipaa-labs 2>&1)" || true 
+
+if [[ "$OUTPUT" == *"with an explicit deny in a resource-based policy"* ]]; then
+    echo "Test 1 PASS: unencrypted upload denied by bucket policy"
 else
-  
+    echo "$OUTPUT"
+    echo "Test 1 FAILED - unencrypted upload"
+  FAILURES+=("Test 1 FAILED - unencrypted upload")
 fi
 
+aws s3 cp sample-837p-claims.csv \
+  s3://hipaa-lab01-phi-landing-948285518372/incoming/ \
+  --sse aws:kms \
+  --sse-kms-key-id alias/hipaa-lab01-phi-landing-zone \
+  --profile hipaa-labs
 
 # -- summary -- 
 
