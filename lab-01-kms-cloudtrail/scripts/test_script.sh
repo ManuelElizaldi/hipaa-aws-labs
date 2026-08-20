@@ -6,10 +6,23 @@ set -euo pipefail
 DAY=$(date +%F)
 FAILURES=()
 
-# Running test 1
+# Profile
+PROFILE="hipaa-labs"
+# Account ID
+ACCOUNT_ID=$(aws sts get-caller-identity --profile $PROFILE --no-cli-pager --output text --query Account)
+# Bucket 
+BUCKET_NAME="hipaa-lab01-phi-landing-${ACCOUNT_ID}"
+#KMS Alias S3
+S3_KMS_KEY_ALIAS="alias/hipaa-lab01-phi-landing-zone"
+# Processing Role
+PROCESSING_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/hipaa-lab01-claims-processing"
+# KMS key for s3
+S3_KMS_KEY_ARN=$(aws kms describe-key   --key-id alias/hipaa-lab01-phi-landing-zone   --profile $PROFILE   --no-cli-pager --output text --query KeyMetadata.Arn)
+
+# Test 1 - upload without encryption - should fail due to bucket policy
 OUTPUT="$(aws s3 cp sample-837p-claims.csv \
-  s3://hipaa-lab01-phi-landing-948285518372/incoming/ \
-  --profile hipaa-labs 2>&1)" || true 
+  s3://"${BUCKET_NAME}"/incoming/ \
+  --profile "$PROFILE" 2>&1)" || true 
 
 if [[ "$OUTPUT" == *"with an explicit deny in a resource-based policy"* ]]; then
     echo "Test 1 PASS: unencrypted upload denied by bucket policy"
@@ -19,47 +32,67 @@ else
   FAILURES+=("Test 1 FAILED - unencrypted upload")
 fi
 
-aws s3 cp sample-837p-claims.csv \
-  s3://hipaa-lab01-phi-landing-948285518372/incoming/ \
-  --sse aws:kms \
-  --sse-kms-key-id alias/hipaa-lab01-phi-landing-zone \
-  --profile hipaa-labs
 
+# test 2 - upload with encryption upload: ./sample-837p-claims.csv to s3://hipaa-lab01-phi-landing-948285518372/incoming/sample-837p-claims.csv
+OUTPUT="$(aws s3 cp sample-837p-claims.csv \
+s3://"${BUCKET_NAME}"/incoming/ \
+--sse aws:kms \
+--sse-kms-key-id "${S3_KMS_KEY_ALIAS}" \
+--profile "$PROFILE" 2>&1)" || true
+
+if [[ "$OUTPUT" == *"upload: ./sample-837p-claims.csv to s3://${BUCKET_NAME}/incoming/sample-837p-claims.csv"* ]]; then
+    echo "Upload succeeded"
+    
+    SSEKMSID="$(aws s3api head-object \
+            --bucket "${BUCKET_NAME}" \
+            --key incoming/sample-837p-claims.csv \
+            --profile "$PROFILE" \
+            --no-cli-pager \
+            --query SSEKMSKeyId 2>&1)" || true
+
+    SERVERSIDEENCRYPTION="$(aws s3api head-object \
+            --bucket "${BUCKET_NAME}" \
+            --key incoming/sample-837p-claims.csv \
+            --profile "$PROFILE" \
+            --no-cli-pager \
+            --query ServerSideEncryption 2>&1)" || true
+
+    if [[ "$SERVERSIDEENCRYPTION" == *"aws:kms"* ]] && [[ "$SSEKMSID" == *$S3_KMS_KEY_ARN* ]]; then
+        echo "Test 2 PASS: encrypted upload used KMS"
+    else
+        echo "$SERVERSIDEENCRYPTION"
+        echo "$SSEKMSID"
+        echo "Test 2 FAILED: encrypted upload did not use KMS"
+        FAILURES+=("Test 2 FAILED - encrypted upload did not use KMS")
+    fi
+else
+    echo "Test 2 FAILED"
+  FAILURES+=("$OUTPUT")
+fi
+
+
+
+# Test 2 final test 
+  
 # -- summary -- 
 
 # cloud trail look ups 
 aws cloudtrail lookup-events \
   --lookup-attributes AttributeKey=EventName,AttributeValue=Decrypt \
   --max-results 5 \
-  --profile hipaa-labs \
+  --profile $PROFILE \
   --no-cli-pager
 
 
   aws s3 cp \
-  s3://hipaa-lab01-phi-landing-948285518372/incoming/sample-837p-claims.csv \
+  s3://"${BUCKET_NAME}"/incoming/sample-837p-claims.csv \
   ./downloaded-by-processing.csv
 
 
-# test 1 - upload with no encryption
-cd ~/Desktop/Projects/hipaa-aws-labs/lab-01-kms-cloudtrail/verification
-
-aws s3 cp sample-837p-claims.csv \
-  s3://hipaa-lab01-phi-landing-948285518372/incoming/ \
-  --profile hipaa-labs
 
 
-  # test 2 - upload with encryption
-  aws s3api head-object \
-  --bucket hipaa-lab01-phi-landing-948285518372 \
-  --key incoming/sample-837p-claims.csv \
-  --profile hipaa-labs \
-  --no-cli-pager
 
-  aws s3 cp sample-837p-claims.csv \
-  s3://hipaa-lab01-phi-landing-948285518372/incoming/ \
-  --sse aws:kms \
-  --sse-kms-key-id alias/hipaa-lab01-phi-landing-zone \
-  --profile hipaa-labs
+
 
 
 # test 3 - download as the processing role - with both Get object and kms: decryption
